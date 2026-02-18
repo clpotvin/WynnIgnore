@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "wynnignore",
+  "version": "${version}",
+  "name": "WynnIgnore",
+  "description": "Track and manage ignored players on Wynncraft with utility commands",
+  "authors": ["WynnIgnore"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/wynnignore/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.wynnignore.WynnIgnoreMod"],
+    "modmenu": ["com.wynnignore.ModMenuIntegration"]
+  },
+  "mixins": ["wynnignore.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*",
+    "cloth-config": "*"
+  }
+}
