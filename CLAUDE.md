@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rules
+
+- **Never add Co-Authored-By lines to commits.** Do not co-author under any circumstances.
+
 ## Project Overview
 
 WynnIgnore is a client-side Fabric mod for Minecraft 1.21.11 that enhances the `/ignore` system on the Wynncraft server. It tracks ignored players locally, adds timed ignores (auto-unignore after a duration), and provides a `/warignore` command to bulk-ignore nearby players during wars.
@@ -18,6 +22,7 @@ WynnIgnore is a client-side Fabric mod for Minecraft 1.21.11 that enhances the `
 - Yarn mappings 1.21.11+build.4
 - Fabric Loom 1.14 (Gradle plugin), Gradle 9.3.1
 - Mod Menu integration (Terraformers modmenu 17.0.0-beta.2)
+- Cloth Config (`me.shedaniel.cloth:cloth-config-fabric:21.11.153`) for config screen UI
 - SpongePowered Mixin for hooking into Minecraft internals
 
 ## Architecture
@@ -42,7 +47,7 @@ All source is in `src/main/java/com/wynnignore/`. This is a client-only mod (`"e
 - `IgnoreListManager` — stores ignored players and timed ignore expiry timestamps in `config/wynnignore.json` (versioned format, v2 current, with v1 migration support)
 - `ModConfig` — stores settings (war ignore duration, war ignore distance, command delay, max retries) in `config/wynnignore_config.json`. Singleton with double-checked locking.
 
-**Config UI:** `ConfigScreen` provides a Mod Menu-accessible settings screen for war ignore duration (1-60 min), distance (1-50 blocks), command delay (100-1000ms), and max retries (0-5).
+**Config UI:** `ConfigScreen` is a utility class (not a Screen subclass) that uses Cloth Config's builder API to create the Mod Menu settings screen. Settings: war ignore duration (1-60 min), distance (1-50 blocks), command delay (100-1000ms), and max retries (0-5).
 
 ## Key Design Details
 
