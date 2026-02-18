@@ -18,6 +18,10 @@ build/
 # OS
 .DS_Store
 
+# Claude
+CLAUDE.md
+.claude/
+
 # Fabric
 run/
 net/
