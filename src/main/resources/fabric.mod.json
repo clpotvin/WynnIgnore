@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "WynnIgnore",
   "description": "Track and manage ignored players on Wynncraft with utility commands",
-  "authors": ["WynnIgnore"],
+  "authors": ["LordGonner"],
   "contact": {},
   "license": "MIT",
   "icon": "assets/wynnignore/icon.png",
