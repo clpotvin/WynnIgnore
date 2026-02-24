@@ -124,9 +124,16 @@ public class ClientPlayNetworkHandlerMixin {
         // This is any other subcommand that isn't "list" or "remove"
         if (parts.length >= 2) {
             String playerName = parts[1];
-            // Skip common subcommands that aren't player names
+            // Handle "/ignore add <player>" - track the player and let through
+            if (playerName.equalsIgnoreCase("add") && parts.length >= 3) {
+                if (!CommandHandler.isSendingQueuedCommand()) {
+                    manager.addPlayer(parts[2]);
+                }
+                return;
+            }
+
+            // Skip other subcommands that aren't player names
             if (playerName.equalsIgnoreCase("add") || playerName.equalsIgnoreCase("help")) {
-                // Let through to server
                 return;
             }
 
