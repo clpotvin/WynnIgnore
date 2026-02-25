@@ -3,6 +3,7 @@ package com.wynnignore;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.minecraft.client.network.ServerInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,9 +25,15 @@ public class WynnIgnoreMod implements ClientModInitializer {
         // Register commands
         CommandHandler.register();
 
-        // Register world join event to check for expired timed ignores
+        // Register world join event to detect server and check for expired timed ignores
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             checkedOnJoin = false;
+
+            // Detect server type and switch ignore list
+            ServerInfo serverInfo = handler.getServerInfo();
+            String address = serverInfo != null ? serverInfo.address : "";
+            String serverType = isBetaServer(address) ? "beta" : "main";
+            ignoreListManager.setServer(serverType);
         });
 
         // Register tick event for timed ignore expiry checking
@@ -55,5 +62,10 @@ public class WynnIgnoreMod implements ClientModInitializer {
 
     public static IgnoreListManager getIgnoreListManager() {
         return ignoreListManager;
+    }
+
+    private static boolean isBetaServer(String address) {
+        String lower = address.toLowerCase();
+        return lower.contains("beta") && lower.contains("wynncraft");
     }
 }

@@ -428,6 +428,25 @@ public class CommandHandler {
             return true;
         }
 
+        // Check for "not being ignored" response (player already unignored on server)
+        if (!pendingIsAdd && lowerMessage.contains(lowerPlayer) && lowerMessage.contains("is not being ignored")) {
+            IgnoreListManager manager = WynnIgnoreMod.getIgnoreListManager();
+            if (manager == null) {
+                resetPendingState();
+                return true;
+            }
+
+            manager.removePlayer(pendingPlayer);
+            sendMessage(Text.literal("[WynnIgnore] ")
+                .formatted(Formatting.GRAY)
+                .append(Text.literal(pendingPlayer).formatted(Formatting.YELLOW))
+                .append(Text.literal(" was not ignored on the server. Removed from local list.").formatted(Formatting.GRAY)));
+
+            resetPendingState();
+            nextCommandReadyTime = System.currentTimeMillis() + getCommandDelayMs();
+            return true;
+        }
+
         return false;
     }
 

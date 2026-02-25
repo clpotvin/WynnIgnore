@@ -14,7 +14,8 @@ import java.util.*;
 public class IgnoreListManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int CURRENT_DATA_VERSION = 2;
-    private final Path configPath;
+    private final Path configDir;
+    private Path configPath;
 
     private final Set<String> ignoredPlayers = new HashSet<>();
     // Maps player name to expiry timestamp (when they should be auto-unignored)
@@ -23,7 +24,29 @@ public class IgnoreListManager {
     private final Set<String> pendingUnignores = new HashSet<>();
 
     public IgnoreListManager() {
-        this.configPath = FabricLoader.getInstance().getConfigDir().resolve("wynnignore.json");
+        this.configDir = FabricLoader.getInstance().getConfigDir();
+        this.configPath = configDir.resolve("wynnignore.json");
+    }
+
+    /**
+     * Switches the ignore list to a different server's data file.
+     * Saves current data, clears state, and loads the new server's data.
+     */
+    public void setServer(String serverType) {
+        save();
+
+        if ("beta".equals(serverType)) {
+            this.configPath = configDir.resolve("wynnignore_beta.json");
+        } else {
+            this.configPath = configDir.resolve("wynnignore.json");
+        }
+
+        ignoredPlayers.clear();
+        timedIgnores.clear();
+        pendingUnignores.clear();
+        load();
+
+        WynnIgnoreMod.LOGGER.info("Switched to {} server ignore list", serverType);
     }
 
     public void addPlayer(String name) {

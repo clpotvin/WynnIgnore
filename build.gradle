@@ -70,6 +70,7 @@ modrinth {
     uploadFile = remapJar
     gameVersions = [project.minecraft_version]
     loaders = ["fabric"]
+    changelog = project.findProperty("changelog") ?: ""
     dependencies {
         required.project "fabric-api"
         required.project "cloth-config"
