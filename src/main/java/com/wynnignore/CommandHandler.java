@@ -8,6 +8,8 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.command.CommandSource;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -49,6 +51,20 @@ public class CommandHandler {
 
     // Shorter timeout for war commands (time-sensitive)
     private static final long WAR_CONFIRMATION_TIMEOUT_MS = 1000;
+
+    // Wynncraft's custom font encodes each glyph as 3 Java chars:
+    // [BMP PUA char (U+E000-U+F8FF)] [U+DAFF] [U+DFFF]
+    // The surrogate pair U+DAFF U+DFFF is a constant marker after every glyph.
+    private static final char WYNN_FONT_SURR_HIGH = '\uDAFF';
+    private static final char WYNN_FONT_SURR_LOW = '\uDFFF';
+
+    // The BMP PUA chars (glyph selectors) that spell "DISGUISED" in Wynncraft's custom font.
+    // Each of these is followed by the DAFF DFFF marker in the actual text, but we only
+    // compare the varying BMP chars to avoid surrogate encoding issues.
+    private static final char[] DISGUISED_GLYPHS = {
+        '\uE060', '\uE033', '\uE038', '\uE042', '\uE036',
+        '\uE044', '\uE038', '\uE042', '\uE034', '\uE033'
+    };
 
     private static class QueuedCommand {
         final String playerName;
@@ -110,6 +126,7 @@ public class CommandHandler {
                     return handleWarIgnore();
                 })
             );
+
         });
     }
 
@@ -180,12 +197,8 @@ public class CommandHandler {
             }
         }
 
-        if (nearbyPlayers.isEmpty()) {
-            sendMessage(Text.literal("[WynnIgnore] No players within " + (int) maxDistance + " blocks.").formatted(Formatting.YELLOW));
-            return 1;
-        }
-
         List<String> toIgnore = new ArrayList<>();
+        Set<String> toIgnoreLower = new java.util.HashSet<>();
         for (AbstractClientPlayerEntity player : nearbyPlayers) {
             String name = player.getName().getString();
 
@@ -194,10 +207,28 @@ public class CommandHandler {
             }
 
             toIgnore.add(name);
+            toIgnoreLower.add(name.toLowerCase());
+        }
+
+        // Also detect disguised players via text display entities
+        String selfName = client.player.getName().getString().toLowerCase();
+        List<String> disguisedNames = findDisguisedPlayers(maxDistance);
+        int disguisedCount = 0;
+        for (String name : disguisedNames) {
+            if (name.toLowerCase().equals(selfName)) continue;
+            if (!manager.isIgnored(name) && !toIgnoreLower.contains(name.toLowerCase())) {
+                toIgnore.add(name);
+                toIgnoreLower.add(name.toLowerCase());
+                disguisedCount++;
+            }
         }
 
         if (toIgnore.isEmpty()) {
-            sendMessage(Text.literal("[WynnIgnore] All nearby players are already ignored.").formatted(Formatting.YELLOW));
+            if (nearbyPlayers.isEmpty() && disguisedNames.isEmpty()) {
+                sendMessage(Text.literal("[WynnIgnore] No players found within " + (int) maxDistance + " blocks.").formatted(Formatting.YELLOW));
+            } else {
+                sendMessage(Text.literal("[WynnIgnore] All nearby players are already ignored.").formatted(Formatting.YELLOW));
+            }
             return 1;
         }
 
@@ -209,7 +240,8 @@ public class CommandHandler {
             }
         }
 
-        sendMessage(Text.literal("[WynnIgnore] War-ignoring " + toIgnore.size() + " players for " + minutes + " min: ")
+        String suffix = disguisedCount > 0 ? " (" + disguisedCount + " disguised)" : "";
+        sendMessage(Text.literal("[WynnIgnore] War-ignoring " + toIgnore.size() + " players" + suffix + " for " + minutes + " min: ")
             .formatted(Formatting.GREEN)
             .append(Text.literal(String.join(", ", toIgnore)).formatted(Formatting.YELLOW)));
         processNextCommand();
@@ -475,6 +507,125 @@ public class CommandHandler {
             }
             return days + "d " + hours + "h";
         }
+    }
+
+    /**
+     * Strips PUA characters, surrogate pairs, and Minecraft formatting codes from a string,
+     * keeping only basic printable characters.
+     */
+    private static String stripPUACharacters(String str) {
+        if (str == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            // Skip surrogate pairs entirely
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 < str.length() && Character.isLowSurrogate(str.charAt(i + 1))) {
+                    i++;
+                }
+                continue;
+            }
+            if (Character.isLowSurrogate(c)) continue;
+            // Skip Private Use Area (U+E000-U+F8FF)
+            if (c >= '\uE000' && c <= '\uF8FF') continue;
+            // Skip Minecraft formatting codes
+            if (c == '\u00a7' && i + 1 < str.length()) {
+                i++;
+                continue;
+            }
+            // Keep spaces, basic punctuation, and alphanumerics
+            if (c == ' ' || c == '-' || c == '\'' || c == '_') {
+                sb.append(c);
+            } else if (Character.isLetterOrDigit(c) && c < 0x2000) {
+                sb.append(c);
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    /**
+     * Checks if a char position is part of a Wynncraft custom font glyph:
+     * a BMP PUA char (U+E000-U+F8FF) followed by the marker surrogate pair U+DAFF U+DFFF.
+     */
+    private static boolean isWynnFontGlyph(String text, int i) {
+        if (i + 2 >= text.length()) return false;
+        char c = text.charAt(i);
+        return c >= '\uE000' && c <= '\uF8FF'
+            && text.charAt(i + 1) == WYNN_FONT_SURR_HIGH
+            && text.charAt(i + 2) == WYNN_FONT_SURR_LOW;
+    }
+
+    /**
+     * Scans for the DISGUISED glyph sequence in the text and returns its start index, or -1.
+     * Each glyph is 3 chars: [BMP PUA] [DAFF] [DFFF], so the full sequence is 30 chars.
+     */
+    private static int findDisguisedTag(String text) {
+        int seqLen = DISGUISED_GLYPHS.length * 3;
+        if (text.length() < seqLen) return -1;
+        for (int i = 0; i <= text.length() - seqLen; i++) {
+            boolean match = true;
+            for (int j = 0; j < DISGUISED_GLYPHS.length; j++) {
+                int pos = i + j * 3;
+                if (!isWynnFontGlyph(text, pos) || text.charAt(pos) != DISGUISED_GLYPHS[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Extracts a player name from a disguised player's text display entity.
+     * Finds the DISGUISED glyph sequence, then takes the stripped text before it as the username.
+     * Handles both formats: [username] [DISGUISED] and [PUA rank] [username] [DISGUISED].
+     */
+    static String extractDisguisedPlayerName(String text) {
+        if (text == null || text.length() < 6) return null;
+
+        int tagIndex = findDisguisedTag(text);
+        if (tagIndex < 0) return null;
+
+        // Strip PUAs/surrogates from everything before the DISGUISED tag
+        String stripped = stripPUACharacters(text.substring(0, tagIndex));
+        if (stripped.isEmpty()) return null;
+
+        // If there are multiple tokens (e.g. guild tag + username), take the last one
+        String[] tokens = stripped.split("\\s+");
+        String name = tokens[tokens.length - 1];
+
+        // Minecraft usernames are 3-16 chars, alphanumeric + underscore
+        if (name.length() < 3 || name.length() > 16) return null;
+        if (!name.matches("[A-Za-z0-9_]+")) return null;
+        return name;
+    }
+
+    /**
+     * Scans nearby text display entities for disguised players and returns their usernames.
+     */
+    private static List<String> findDisguisedPlayers(double maxDistance) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null || client.player == null) return List.of();
+
+        List<String> disguisedNames = new ArrayList<>();
+        for (Entity entity : client.world.getEntities()) {
+            if (!(entity instanceof DisplayEntity.TextDisplayEntity textDisplay)) continue;
+            double distance = client.player.distanceTo(textDisplay);
+            if (distance > maxDistance) continue;
+            try {
+                var data = textDisplay.getData();
+                if (data == null || data.text() == null) continue;
+                String text = data.text().getString();
+                String name = extractDisguisedPlayerName(text);
+                if (name != null) {
+                    disguisedNames.add(name);
+                }
+            } catch (Exception e) {
+                // Ignore errors reading text display data
+            }
+        }
+        return disguisedNames;
     }
 
     private static void sendMessage(Text message) {
